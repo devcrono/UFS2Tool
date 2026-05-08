@@ -3,20 +3,14 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using UFS2Tool;
 using UFS2Tool.GUI.Models;
 using UFS2Tool.GUI.Services;
 namespace UFS2Tool.GUI.ViewModels;
 
-public partial class PS5QuickCreateViewModel : ViewModelBase
+public partial class PS5QuickCreateViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
+    private readonly ObservableCollection<string> _outputLog = outputLog;
 
     // Single mode properties
     [ObservableProperty]
@@ -47,7 +41,7 @@ public partial class PS5QuickCreateViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBatchMode;
 
-    public ObservableCollection<PS5BatchItem> BatchItems { get; } = new();
+    public ObservableCollection<PS5BatchItem> BatchItems { get; } = [];
 
     [ObservableProperty]
     private PS5BatchItem? _selectedBatchItem;
@@ -57,11 +51,6 @@ public partial class PS5QuickCreateViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _batchProgress = "";
-
-    public PS5QuickCreateViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
 
     [RelayCommand]
     private void AddBatchItem()
@@ -256,9 +245,8 @@ public partial class PS5QuickCreateViewModel : ViewModelBase
                     OptimizationPreference = "space",
                     Output = logWriter,
                     ErrorOutput = logWriter,
+                    InputDirectory = inputDir
                 };
-
-                creator.InputDirectory = inputDir;
                 creator.MakeFsImage(outputPath, inputDir);
             });
         }
@@ -274,9 +262,8 @@ public partial class PS5QuickCreateViewModel : ViewModelBase
                     FilesystemFormat = 2,
                     Output = logWriter,
                     ErrorOutput = logWriter,
+                    InputDirectory = inputDir
                 };
-
-                creator.InputDirectory = inputDir;
                 creator.CreateImageFromDirectory(outputPath, inputDir);
             });
         }

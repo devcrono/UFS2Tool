@@ -1,8 +1,3 @@
-using System;
-using System.IO;
-using UFS2Tool;
-using Xunit;
-
 namespace UFS2Tool.Tests
 {
     public class ProgressOutputTests : IDisposable

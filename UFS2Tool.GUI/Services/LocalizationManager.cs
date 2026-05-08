@@ -2,7 +2,6 @@
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
 using CommunityToolkit.Mvvm.ComponentModel;
-using System.Collections.Generic;
 using System.Globalization;
 
 namespace UFS2Tool.GUI.Services;
@@ -65,7 +64,7 @@ public partial class LocalizationManager : ObservableObject
         };
     }
 
-    private Dictionary<string, string> GetStringsForLanguage(string language) => language switch
+    private static Dictionary<string, string> GetStringsForLanguage(string language) => language switch
     {
         "Français" => GetFrenchStrings(),
         "Español" => GetSpanishStrings(),
@@ -105,7 +104,7 @@ public partial class LocalizationManager : ObservableObject
     }
 
     public static readonly string[] AvailableLanguages =
-    {
+    [
         "English",
         "Français",
         "Español",
@@ -132,7 +131,7 @@ public partial class LocalizationManager : ObservableObject
         "Nederlands",
         "Bahasa Indonesia",
         "Magyar",
-    };
+    ];
 
     private static Dictionary<string, string> GetEnglishStrings() => new()
     {

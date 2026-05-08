@@ -3,12 +3,7 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using UFS2Tool;
 using UFS2Tool.GUI.Services;
 
 namespace UFS2Tool.GUI.ViewModels;
@@ -38,17 +33,17 @@ public partial class FileTreeNodeItem : ObservableObject
     /// </summary>
     public bool IsLoaded { get; set; }
 
-    public ObservableCollection<FileTreeNodeItem> Children { get; } = new();
+    public ObservableCollection<FileTreeNodeItem> Children { get; } = [];
 }
 
 /// <summary>
 /// ViewModel for the Content Browser tab, providing a tree-view of UFS image contents
 /// with drag &amp; drop support.
 /// </summary>
-public partial class ContentBrowserViewModel : ViewModelBase
+public partial class ContentBrowserViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
-    private readonly System.Collections.Generic.HashSet<uint> _expandingNodes = new();
+    private readonly ObservableCollection<string> _outputLog = outputLog;
+    private readonly System.Collections.Generic.HashSet<uint> _expandingNodes = [];
 
     [ObservableProperty]
     private string _imagePath = "";
@@ -62,12 +57,7 @@ public partial class ContentBrowserViewModel : ViewModelBase
     [ObservableProperty]
     private string _statusText = "";
 
-    public ObservableCollection<FileTreeNodeItem> RootNodes { get; } = new();
-
-    public ContentBrowserViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
+    public ObservableCollection<FileTreeNodeItem> RootNodes { get; } = [];
 
     /// <summary>
     /// Load the entire root directory of the UFS image into the tree.
@@ -91,7 +81,7 @@ public partial class ContentBrowserViewModel : ViewModelBase
         _outputLog.Add($"[Browser] Loading filesystem tree from '{ImagePath}'...");
         try
         {
-            ObservableCollection<FileTreeNodeItem> rootChildren = new();
+            ObservableCollection<FileTreeNodeItem> rootChildren = [];
             await Task.Run(() =>
             {
                 using var image = new Ufs2Image(ImagePath, readOnly: true);
@@ -143,7 +133,7 @@ public partial class ContentBrowserViewModel : ViewModelBase
 
         try
         {
-            ObservableCollection<FileTreeNodeItem> children = new();
+            ObservableCollection<FileTreeNodeItem> children = [];
             await Task.Run(() =>
             {
                 using var image = new Ufs2Image(ImagePath, readOnly: true);

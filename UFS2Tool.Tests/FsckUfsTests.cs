@@ -1,10 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.IO;
-using UFS2Tool;
-
 namespace UFS2Tool.Tests
 {
     /// <summary>
@@ -367,6 +363,73 @@ namespace UFS2Tool.Tests
 
             Assert.True(result.Clean);
             Assert.Empty(result.Errors);
+        }
+
+        /// <summary>
+        /// Verify that opening a filesystem image via an alternate (backup)
+        /// superblock yields the same superblock as the primary location.
+        /// Mirrors FreeBSD <c>fsck_ffs -b block</c>.
+        /// </summary>
+        [Fact]
+        public void Open_AltSuperblock_MatchesPrimary()
+        {
+            // Use a multi-CG image so backup superblocks exist beyond CG 0.
+            string altPath = Path.Combine(Path.GetTempPath(), $"ufs2alt_{Guid.NewGuid():N}.img");
+            try
+            {
+                var creator = new Ufs2ImageCreator();
+                // Default fpg is large enough that 64 MB fits in a single CG, so
+                // size the image at 256 MB to guarantee multiple cylinder groups.
+                creator.CreateImage(altPath, 256 * 1024 * 1024);
+
+                Ufs2Superblock primary;
+                long backupSbSector;
+                using (var img = new Ufs2Image(altPath, readOnly: true))
+                {
+                    primary = img.Superblock;
+                    Assert.True(img.Superblock.NumCylGroups >= 2,
+                        "Test requires an image with at least 2 cylinder groups.");
+
+                    // Backup superblock for CG 1 lives at (cg * fs_fpg + fs_sblkno)
+                    // fragments. Convert that to 512-byte sectors for -b style use.
+                    long backupSbFrag = (long)primary.CylGroupSize + primary.SuperblockLocation;
+                    backupSbSector = backupSbFrag * primary.FSize / 512;
+                }
+
+                using var alt = new Ufs2Image(altPath, readOnly: true,
+                    altSuperblockSector: backupSbSector);
+
+                Assert.True(alt.Superblock.IsValid);
+                Assert.Equal(primary.Magic, alt.Superblock.Magic);
+                Assert.Equal(primary.NumCylGroups, alt.Superblock.NumCylGroups);
+                Assert.Equal(primary.TotalBlocks, alt.Superblock.TotalBlocks);
+                Assert.Equal(primary.BSize, alt.Superblock.BSize);
+                Assert.Equal(primary.FSize, alt.Superblock.FSize);
+                Assert.Equal(primary.InodesPerGroup, alt.Superblock.InodesPerGroup);
+
+                // fsck against the backup-loaded image should still pass.
+                var result = alt.FsckUfs();
+                Assert.True(result.Clean);
+                Assert.Empty(result.Errors);
+            }
+            finally
+            {
+                if (File.Exists(altPath))
+                    File.Delete(altPath);
+            }
+        }
+
+        /// <summary>
+        /// Opening with an alternate superblock sector that points outside the image
+        /// (or at uninitialized data) must throw rather than silently succeed.
+        /// </summary>
+        [Fact]
+        public void Open_AltSuperblock_OutOfRange_Throws()
+        {
+            // A sector well beyond the end of the 64 MB image.
+            long bogusSector = (200L * 1024 * 1024) / 512;
+            Assert.ThrowsAny<Exception>(() =>
+                new Ufs2Image(_imagePath, readOnly: true, altSuperblockSector: bogusSector));
         }
     }
 }

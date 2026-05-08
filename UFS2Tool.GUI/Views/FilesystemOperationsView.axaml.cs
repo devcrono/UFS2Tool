@@ -23,11 +23,11 @@ public partial class FilesystemOperationsView : UserControl
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             AllowMultiple = false,
-            FileTypeFilter = new[]
-            {
-                new FilePickerFileType("Image files") { Patterns = new[] { "*.img" } },
-                new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-            },
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Image files") { Patterns = ["*.img"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
         });
 
         if (files.Count > 0 && DataContext is FilesystemOperationsViewModel vm)

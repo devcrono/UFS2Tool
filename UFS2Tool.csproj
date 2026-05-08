@@ -6,8 +6,8 @@
     <AssemblyName>UFS2Tool</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-    <Version>4.0.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>4.1.0</Version>
     <Authors>SvenGDK</Authors>
     <Description>UFS2 Tool — FreeBSD UFS1/UFS2 Filesystem Manager for Windows</Description>
     <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
@@ -25,6 +25,6 @@
     <Compile Remove="UFS2Tool.GUI/**" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="DokanNet" Version="2.0.1" />
+    <PackageReference Include="DokanNet" Version="2.3.0.3" />
   </ItemGroup>
 </Project>

@@ -1,8 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -42,12 +40,12 @@ public partial class PS5QuickCreateView : UserControl
         var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             DefaultExtension = "ffpkg",
-            FileTypeChoices = new[]
-            {
-                new FilePickerFileType("fflat package files") { Patterns = new[] { "*.ffpkg" } },
-                new FilePickerFileType("Image files") { Patterns = new[] { "*.img" } },
-                new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-            },
+            FileTypeChoices =
+            [
+                new FilePickerFileType("fflat package files") { Patterns = ["*.ffpkg"] },
+                new FilePickerFileType("Image files") { Patterns = ["*.img"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
         });
 
         if (file != null && DataContext is PS5QuickCreateViewModel vm)

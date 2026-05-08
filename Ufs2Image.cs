@@ -1,10 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-
 namespace UFS2Tool
 {
     /// <summary>
@@ -31,6 +27,19 @@ namespace UFS2Tool
         public TextWriter? Output { get; set; }
 
         public Ufs2Image(string imagePath, bool readOnly = false)
+            : this(imagePath, readOnly, altSuperblockSector: -1)
+        {
+        }
+
+        /// <summary>
+        /// Open a UFS1/UFS2 filesystem image, optionally reading the superblock from
+        /// an alternate location specified as a 512-byte sector offset (e.g. one of
+        /// the backup superblock locations printed by newfs/growfs). Mirrors
+        /// FreeBSD's <c>fsck_ffs -b block</c> behavior. When
+        /// <paramref name="altSuperblockSector"/> is negative the primary superblock
+        /// at <see cref="Ufs2Constants.SuperblockOffset"/> is used.
+        /// </summary>
+        public Ufs2Image(string imagePath, bool readOnly, long altSuperblockSector)
         {
             ImagePath = imagePath;
             IsReadOnly = readOnly;
@@ -43,7 +52,10 @@ namespace UFS2Tool
 
             try
             {
-                ReadSuperblock();
+                long sbOffset = altSuperblockSector >= 0
+                    ? altSuperblockSector * Ufs2Constants.DefaultSectorSize
+                    : Ufs2Constants.SuperblockOffset;
+                ReadSuperblock(sbOffset);
             }
             catch
             {
@@ -54,14 +66,19 @@ namespace UFS2Tool
             }
         }
 
-        private void ReadSuperblock()
+        private void ReadSuperblock(long offset = Ufs2Constants.SuperblockOffset)
         {
-            _stream.Position = Ufs2Constants.SuperblockOffset;
+            if (offset < 0 || offset + Ufs2Constants.SuperblockSize > _stream.Length)
+                throw new InvalidDataException(
+                    $"Superblock offset {offset} is outside the image bounds ({_stream.Length} bytes).");
+
+            _stream.Position = offset;
             Superblock = Ufs2Superblock.ReadFrom(_reader);
 
             if (!Superblock.IsValid)
                 throw new InvalidDataException(
-                    $"Invalid UFS superblock. Magic: 0x{Superblock.Magic:X8}, " +
+                    $"Invalid UFS superblock at offset {offset}. " +
+                    $"Magic: 0x{Superblock.Magic:X8}, " +
                     $"Expected: 0x{Ufs2Constants.Ufs2Magic:X8} (UFS2) or 0x{Ufs2Constants.Ufs1Magic:X8} (UFS1)");
         }
 
@@ -516,27 +533,19 @@ namespace UFS2Tool
         /// <summary>
         /// Represents a single result from a filesystem find operation.
         /// </summary>
-        public sealed class FindResult
+        public sealed class FindResult(string path, byte fileType, uint inode, long size)
         {
             /// <summary>Full path within the filesystem (e.g., "/dir/file.txt").</summary>
-            public string Path { get; }
+            public string Path { get; } = path;
 
             /// <summary>Directory entry file type constant (DtDir, DtReg, DtLnk, etc.).</summary>
-            public byte FileType { get; }
+            public byte FileType { get; } = fileType;
 
             /// <summary>Inode number of the entry.</summary>
-            public uint Inode { get; }
+            public uint Inode { get; } = inode;
 
             /// <summary>File size in bytes (from inode).</summary>
-            public long Size { get; }
-
-            public FindResult(string path, byte fileType, uint inode, long size)
-            {
-                Path = path;
-                FileType = fileType;
-                Inode = inode;
-                Size = size;
-            }
+            public long Size { get; } = size;
         }
 
         /// <summary>
@@ -599,27 +608,19 @@ namespace UFS2Tool
         /// <summary>
         /// Represents a single result from a filesystem disk usage calculation.
         /// </summary>
-        public sealed class DiskUsageEntry
+        public sealed class DiskUsageEntry(string path, long bytes, long blocks, bool isDirectory)
         {
             /// <summary>Full path within the filesystem (e.g., "/dir").</summary>
-            public string Path { get; }
+            public string Path { get; } = path;
 
             /// <summary>Logical size in bytes (sum of file sizes).</summary>
-            public long Bytes { get; }
+            public long Bytes { get; } = bytes;
 
             /// <summary>Disk blocks consumed (512-byte units, matching du(1) convention).</summary>
-            public long Blocks { get; }
+            public long Blocks { get; } = blocks;
 
             /// <summary>Whether this entry is a directory.</summary>
-            public bool IsDirectory { get; }
-
-            public DiskUsageEntry(string path, long bytes, long blocks, bool isDirectory)
-            {
-                Path = path;
-                Bytes = bytes;
-                Blocks = blocks;
-                IsDirectory = isDirectory;
-            }
+            public bool IsDirectory { get; } = isDirectory;
         }
 
         /// <summary>

@@ -1,9 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 namespace UFS2Tool
@@ -178,6 +175,45 @@ namespace UFS2Tool
         }
 
         /// <summary>
+        /// Mirror FreeBSD's newfs.c: when the user-specified sector size is not
+        /// DEV_BSIZE (512), save it as "realsectorsize" (used only for physical I/O
+        /// alignment on raw devices) and normalize the filesystem-layout sectorsize
+        /// to DEV_BSIZE. This guarantees that fs_fsbtodb, fs_old_nspf, the on-disk
+        /// recovery-block location, and the interpretation of -s size all match the
+        /// values that FreeBSD's native newfs(8) would produce — regardless of -S.
+        ///
+        /// FreeBSD newfs.c (sbin/newfs/newfs.c) does exactly:
+        ///     realsectorsize = sectorsize;
+        ///     if (sectorsize != DEV_BSIZE) {
+        ///         int secperblk = sectorsize / DEV_BSIZE;
+        ///         sectorsize = DEV_BSIZE;
+        ///         fssize *= secperblk;
+        ///     }
+        /// </summary>
+        /// <returns>The user-specified ("real") sector size, used for raw-device I/O alignment.</returns>
+        private int NormalizeSectorSizeForLayout()
+        {
+            int realSectorSize = SectorSize;
+            if (SectorSize != Ufs2Constants.DefaultSectorSize)
+            {
+                // ValidateParameters() (called by the public CreateImage / CreateOnDevice
+                // entry points before this method) guarantees that SectorSize is a power
+                // of 2 >= DEV_BSIZE, so the division below is always exact. Assert this
+                // invariant defensively in case the call order ever changes.
+                System.Diagnostics.Debug.Assert(
+                    SectorSize % Ufs2Constants.DefaultSectorSize == 0,
+                    $"SectorSize ({SectorSize}) must be a multiple of DEV_BSIZE ({Ufs2Constants.DefaultSectorSize}); " +
+                    "ValidateParameters() must run before NormalizeSectorSizeForLayout().");
+
+                int secPerBlk = SectorSize / Ufs2Constants.DefaultSectorSize;
+                if (SizeOverride > 0)
+                    SizeOverride *= secPerBlk;
+                SectorSize = Ufs2Constants.DefaultSectorSize;
+            }
+            return realSectorSize;
+        }
+
+        /// <summary>
         /// Compute the filesystem flags from the boolean options.
         /// </summary>
         private int ComputeFlags()
@@ -229,7 +265,25 @@ namespace UFS2Tool
                 SectorSize = physicalSectorSize;
             }
 
-            // Apply -s size override (in 512-byte sectors) if specified
+            (Output ?? Console.Out).WriteLine($"Device:      {devicePath}");
+            (Output ?? Console.Out).WriteLine($"Device size: {deviceSize:N0} bytes ({deviceSize / (1024 * 1024)} MB)");
+            (Output ?? Console.Out).WriteLine($"Sector size: {SectorSize} bytes");
+
+            ValidateParameters();
+
+            // Mirror FreeBSD newfs(8): the on-disk filesystem layout always uses
+            // DEV_BSIZE (512-byte) units. The user-specified -S (or auto-detected
+            // physical sector size) is preserved as realSectorSize for raw-device
+            // I/O alignment only. Restore the original SectorSize in finally so
+            // that callers/tests observe the value they configured.
+            int origSectorSize = SectorSize;
+            long origSizeOverride = SizeOverride;
+            int realSectorSize = NormalizeSectorSizeForLayout();
+
+            // -s size: per FreeBSD, the value is in real-sector units. After
+            // NormalizeSectorSizeForLayout(), SizeOverride has already been
+            // multiplied by secperblk so that (SizeOverride * DEV_BSIZE) yields
+            // the correct byte count.
             long totalSizeBytes;
             if (SizeOverride > 0)
             {
@@ -243,50 +297,56 @@ namespace UFS2Tool
                 totalSizeBytes = deviceSize;
             }
 
-            (Output ?? Console.Out).WriteLine($"Device:      {devicePath}");
-            (Output ?? Console.Out).WriteLine($"Device size: {deviceSize:N0} bytes ({deviceSize / (1024 * 1024)} MB)");
-            (Output ?? Console.Out).WriteLine($"Sector size: {SectorSize} bytes");
-
-            ValidateParameters();
-
-            if (totalSizeBytes < BlockSize * 16)
-                throw new ArgumentException(
-                    $"Device too small ({totalSizeBytes:N0} bytes). " +
-                    $"Minimum: {BlockSize * 16:N0} bytes (16 blocks).");
-
-            // Align total size down to fragment boundary
-            totalSizeBytes = (totalSizeBytes / FragmentSize) * FragmentSize;
-
-            (Output ?? Console.Out).WriteLine($"Usable size: {totalSizeBytes:N0} bytes (aligned to {FragmentSize}-byte fragments)");
-            (Output ?? Console.Out).WriteLine();
-
-            PrintNewfsParameters(totalSizeBytes);
-
-            if (DryRun)
+            try
             {
-                (Output ?? Console.Out).WriteLine("Dry run (-N): filesystem was NOT created.");
-                return;
+
+                if (totalSizeBytes < BlockSize * 16)
+                    throw new ArgumentException(
+                        $"Device too small ({totalSizeBytes:N0} bytes). " +
+                        $"Minimum: {BlockSize * 16:N0} bytes (16 blocks).");
+
+                // Align total size down to fragment boundary
+                totalSizeBytes = (totalSizeBytes / FragmentSize) * FragmentSize;
+
+                (Output ?? Console.Out).WriteLine($"Usable size: {totalSizeBytes:N0} bytes (aligned to {FragmentSize}-byte fragments)");
+                (Output ?? Console.Out).WriteLine();
+
+                PrintNewfsParameters(totalSizeBytes, realSectorSize);
+
+                if (DryRun)
+                {
+                    (Output ?? Console.Out).WriteLine("Dry run (-N): filesystem was NOT created.");
+                    return;
+                }
+
+                // Open device with locking. The AlignedStream uses realSectorSize so
+                // that all physical writes meet the device's hardware alignment
+                // requirements (e.g., 4 KB sectors on AF disks), even though the
+                // on-disk filesystem layout is computed in 512-byte units.
+                using var deviceStream = DriveIO.OpenDeviceStream(devicePath, readOnly: false, lockVolume: true);
+                using var aligned = new AlignedStream(deviceStream, realSectorSize, deviceSize);
+
+                // Erase device if -E flag set
+                if (EraseContents)
+                {
+                    (Output ?? Console.Out).WriteLine("Erasing device contents...");
+                    long eraseSize = Math.Min(totalSizeBytes, deviceSize);
+                    long eraseAligned = (eraseSize / realSectorSize) * realSectorSize;
+                    aligned.WriteZeros(0, eraseAligned);
+                    (Output ?? Console.Out).WriteLine("Erase complete.");
+                }
+
+                // Build the filesystem structures in memory, then write sector-aligned
+                WriteFilesystem(aligned, totalSizeBytes);
+
+                aligned.Flush();
+                (Output ?? Console.Out).WriteLine("Filesystem written successfully to device.");
             }
-
-            // Open device with locking
-            using var deviceStream = DriveIO.OpenDeviceStream(devicePath, readOnly: false, lockVolume: true);
-            using var aligned = new AlignedStream(deviceStream, SectorSize, deviceSize);
-
-            // Erase device if -E flag set
-            if (EraseContents)
+            finally
             {
-                (Output ?? Console.Out).WriteLine("Erasing device contents...");
-                long eraseSize = Math.Min(totalSizeBytes, deviceSize);
-                long eraseAligned = (eraseSize / SectorSize) * SectorSize;
-                aligned.WriteZeros(0, eraseAligned);
-                (Output ?? Console.Out).WriteLine("Erase complete.");
+                SectorSize = origSectorSize;
+                SizeOverride = origSizeOverride;
             }
-
-            // Build the filesystem structures in memory, then write sector-aligned
-            WriteFilesystem(aligned, totalSizeBytes);
-
-            aligned.Flush();
-            (Output ?? Console.Out).WriteLine("Filesystem written successfully to device.");
         }
 
         /// <summary>
@@ -295,42 +355,67 @@ namespace UFS2Tool
         /// </summary>
         public void CreateImage(string imagePath, long totalSizeBytes)
         {
-            // Apply -s size override (in 512-byte sectors) if specified
-            if (SizeOverride > 0)
-                totalSizeBytes = SizeOverride * Ufs2Constants.DefaultSectorSize;
-
             ValidateParameters();
 
-            if (totalSizeBytes < BlockSize * 16)
-                throw new ArgumentException(
-                    $"Image too small. Minimum size is {BlockSize * 16} bytes (16 blocks of {BlockSize} bytes).");
+            // Mirror FreeBSD newfs(8): the on-disk filesystem layout always uses
+            // DEV_BSIZE (512-byte) units. The user-specified -S is preserved as
+            // realSectorSize but is only relevant for raw-device I/O alignment.
+            // For an image file the AlignedStream can use DEV_BSIZE directly.
+            // Restore SectorSize/SizeOverride in finally so that callers/tests
+            // observe the values they configured.
+            int origSectorSize = SectorSize;
+            long origSizeOverride = SizeOverride;
+            int realSectorSize = NormalizeSectorSizeForLayout();
 
-            if (totalSizeBytes % FragmentSize != 0)
-                throw new ArgumentException(
-                    $"Image size ({totalSizeBytes}) must be a multiple of fragment size ({FragmentSize}).");
-
-            PrintNewfsParameters(totalSizeBytes);
-
-            if (DryRun)
+            try
             {
-                (Output ?? Console.Out).WriteLine("Dry run (-N): filesystem was NOT created.");
-                return;
+                // Apply -s size override. After normalization SizeOverride is in
+                // DEV_BSIZE units, so (SizeOverride * 512) gives the correct byte
+                // count regardless of the user's -S setting.
+                if (SizeOverride > 0)
+                    totalSizeBytes = SizeOverride * Ufs2Constants.DefaultSectorSize;
+
+                if (totalSizeBytes < BlockSize * 16)
+                    throw new ArgumentException(
+                        $"Image too small. Minimum size is {BlockSize * 16} bytes (16 blocks of {BlockSize} bytes).");
+
+                if (totalSizeBytes % FragmentSize != 0)
+                    throw new ArgumentException(
+                        $"Image size ({totalSizeBytes}) must be a multiple of fragment size ({FragmentSize}).");
+
+                PrintNewfsParameters(totalSizeBytes, realSectorSize);
+
+                if (DryRun)
+                {
+                    (Output ?? Console.Out).WriteLine("Dry run (-N): filesystem was NOT created.");
+                    return;
+                }
+
+                using var fs = new FileStream(imagePath, FileMode.Create, FileAccess.ReadWrite);
+                fs.SetLength(totalSizeBytes);
+
+                using var aligned = new AlignedStream(fs, SectorSize, totalSizeBytes);
+                WriteFilesystem(aligned, totalSizeBytes);
+
+                aligned.Flush();
             }
-
-            using var fs = new FileStream(imagePath, FileMode.Create, FileAccess.ReadWrite);
-            fs.SetLength(totalSizeBytes);
-
-            using var aligned = new AlignedStream(fs, SectorSize, totalSizeBytes);
-            WriteFilesystem(aligned, totalSizeBytes);
-
-            aligned.Flush();
+            finally
+            {
+                SectorSize = origSectorSize;
+                SizeOverride = origSizeOverride;
+            }
         }
 
         /// <summary>
         /// Print the computed filesystem parameters (always shown, required for -N dry run).
         /// </summary>
-        private void PrintNewfsParameters(long totalSizeBytes)
+        /// <param name="realSectorSize">
+        /// The user-specified ("real") sector size to display, before normalization
+        /// to DEV_BSIZE. Defaults to the current SectorSize when not provided.
+        /// </param>
+        private void PrintNewfsParameters(long totalSizeBytes, int realSectorSize = 0)
         {
+            if (realSectorSize <= 0) realSectorSize = SectorSize;
             int fragsPerBlock = BlockSize / FragmentSize;
             long totalFrags = totalSizeBytes / FragmentSize;
             int inodeSize = InodeSizeForFormat;
@@ -347,7 +432,7 @@ namespace UFS2Tool
             (Output ?? Console.Out).WriteLine($"  Format:        {formatStr} (-O {FilesystemFormat})");
             (Output ?? Console.Out).WriteLine($"  Block size:    {BlockSize} bytes (-b)");
             (Output ?? Console.Out).WriteLine($"  Fragment size: {FragmentSize} bytes (-f)");
-            (Output ?? Console.Out).WriteLine($"  Sector size:   {SectorSize} bytes (-S)");
+            (Output ?? Console.Out).WriteLine($"  Sector size:   {realSectorSize} bytes (-S)");
             (Output ?? Console.Out).WriteLine($"  Inode size:    {inodeSize} bytes");
             (Output ?? Console.Out).WriteLine($"  Total size:    {totalSizeBytes:N0} bytes ({totalSizeBytes / (1024 * 1024)} MB)");
             (Output ?? Console.Out).WriteLine($"  Cylinder groups: {numCylGroups}");
@@ -1535,49 +1620,49 @@ namespace UFS2Tool
 
             try
             {
-            // Step 1: Calculate required space if not explicitly provided
-            if (totalSizeBytes <= 0)
-            {
-                var (dirSize, diskSize, totalEntries) = CalculateDirectorySizes(directoryPath, BlockSize);
-                totalSizeBytes = CalculateImageSize(diskSize);
-
-                // Ensure the image has enough cylinder groups for the required inodes.
-                // Each entry (file or directory) needs one inode, plus 3 reserved inodes
-                // (inode 0, inode 1, and the root directory inode 2).
-                long totalInodesNeeded = totalEntries + 3;
-                int inodesPerGroup = ComputeInodesPerGroup(totalSizeBytes);
-                int fragsPerBlock = BlockSize / FragmentSize;
-                int fragsPerGroup = inodesPerGroup * fragsPerBlock;
-                long totalFrags = totalSizeBytes / FragmentSize;
-                int numCylGroups = Math.Max(1, (int)((totalFrags + fragsPerGroup - 1) / fragsPerGroup));
-                long availableInodes = (long)numCylGroups * inodesPerGroup;
-
-                if (totalInodesNeeded > availableInodes)
+                // Step 1: Calculate required space if not explicitly provided
+                if (totalSizeBytes <= 0)
                 {
-                    // Need more CGs to hold all inodes
-                    int requiredCgs = (int)((totalInodesNeeded + inodesPerGroup - 1) / inodesPerGroup);
-                    long requiredFrags = (long)requiredCgs * fragsPerGroup;
-                    long requiredBytes = requiredFrags * FragmentSize;
-                    if (requiredBytes > totalSizeBytes)
-                        totalSizeBytes = AlignUp(requiredBytes, FragmentSize);
+                    var (dirSize, diskSize, totalEntries) = CalculateDirectorySizes(directoryPath, BlockSize);
+                    totalSizeBytes = CalculateImageSize(diskSize);
+
+                    // Ensure the image has enough cylinder groups for the required inodes.
+                    // Each entry (file or directory) needs one inode, plus 3 reserved inodes
+                    // (inode 0, inode 1, and the root directory inode 2).
+                    long totalInodesNeeded = totalEntries + 3;
+                    int inodesPerGroup = ComputeInodesPerGroup(totalSizeBytes);
+                    int fragsPerBlock = BlockSize / FragmentSize;
+                    int fragsPerGroup = inodesPerGroup * fragsPerBlock;
+                    long totalFrags = totalSizeBytes / FragmentSize;
+                    int numCylGroups = Math.Max(1, (int)((totalFrags + fragsPerGroup - 1) / fragsPerGroup));
+                    long availableInodes = (long)numCylGroups * inodesPerGroup;
+
+                    if (totalInodesNeeded > availableInodes)
+                    {
+                        // Need more CGs to hold all inodes
+                        int requiredCgs = (int)((totalInodesNeeded + inodesPerGroup - 1) / inodesPerGroup);
+                        long requiredFrags = (long)requiredCgs * fragsPerGroup;
+                        long requiredBytes = requiredFrags * FragmentSize;
+                        if (requiredBytes > totalSizeBytes)
+                            totalSizeBytes = AlignUp(requiredBytes, FragmentSize);
+                    }
+
+                    (Output ?? Console.Out).WriteLine($"  Input directory: {directoryPath}");
+                    (Output ?? Console.Out).WriteLine($"  Directory size:  {dirSize:N0} bytes ({dirSize / (1024.0 * 1024):F2} MB)");
+                    (Output ?? Console.Out).WriteLine($"  Auto-sized to:   {totalSizeBytes:N0} bytes ({totalSizeBytes / (1024 * 1024)} MB)");
+                    (Output ?? Console.Out).WriteLine();
                 }
 
-                (Output ?? Console.Out).WriteLine($"  Input directory: {directoryPath}");
-                (Output ?? Console.Out).WriteLine($"  Directory size:  {dirSize:N0} bytes ({dirSize / (1024.0 * 1024):F2} MB)");
-                (Output ?? Console.Out).WriteLine($"  Auto-sized to:   {totalSizeBytes:N0} bytes ({totalSizeBytes / (1024 * 1024)} MB)");
-                (Output ?? Console.Out).WriteLine();
-            }
+                // Step 2: Create an empty UFS filesystem
+                CreateImage(imagePath, totalSizeBytes);
 
-            // Step 2: Create an empty UFS filesystem
-            CreateImage(imagePath, totalSizeBytes);
+                // Step 3: Recursively add files and directories
+                if (!DryRun)
+                {
+                    PopulateFromDirectory(imagePath, directoryPath);
+                }
 
-            // Step 3: Recursively add files and directories
-            if (!DryRun)
-            {
-                PopulateFromDirectory(imagePath, directoryPath);
-            }
-
-            return totalSizeBytes;
+                return totalSizeBytes;
             }
             finally
             {
@@ -1617,183 +1702,183 @@ namespace UFS2Tool
             try
             {
 
-            // -s sets both minsize and maxsize (exactly like FreeBSD)
-            if (imageSize > 0)
-            {
-                // Align to block boundary so min==max is achievable
-                long aligned = AlignUp(imageSize, BlockSize);
-                minimumSize = aligned;
-                maximumSize = aligned;
-            }
+                // -s sets both minsize and maxsize (exactly like FreeBSD)
+                if (imageSize > 0)
+                {
+                    // Align to block boundary so min==max is achievable
+                    long aligned = AlignUp(imageSize, BlockSize);
+                    minimumSize = aligned;
+                    maximumSize = aligned;
+                }
 
-            // Validate minsize/maxsize after rounding up to bsize
-            if (maximumSize > 0 && AlignUp(minimumSize, BlockSize) > maximumSize)
-                throw new ArgumentException(
-                    $"Minimum size {minimumSize:N0} rounded up to block size {BlockSize} " +
-                    $"exceeds maximum size {maximumSize:N0}.");
+                // Validate minsize/maxsize after rounding up to bsize
+                if (maximumSize > 0 && AlignUp(minimumSize, BlockSize) > maximumSize)
+                    throw new ArgumentException(
+                        $"Minimum size {minimumSize:N0} rounded up to block size {BlockSize} " +
+                        $"exceeds maximum size {maximumSize:N0}.");
 
-            // ── Step 1: ffs_size_dir — walk tree, compute exact data size + inodes ──
-            var (dirSize, diskSize, totalEntries) = CalculateDirectorySizes(directoryPath, BlockSize, FragmentSize, FilesystemFormat);
-            // Each entry needs one inode, plus 3 reserved inodes
-            // (inode 0, inode 1, and the root directory inode 2).
-            long totalInodes = totalEntries + 3;
-            long totalSize = diskSize;
+                // ── Step 1: ffs_size_dir — walk tree, compute exact data size + inodes ──
+                var (dirSize, diskSize, totalEntries) = CalculateDirectorySizes(directoryPath, BlockSize, FragmentSize, FilesystemFormat);
+                // Each entry needs one inode, plus 3 reserved inodes
+                // (inode 0, inode 1, and the root directory inode 2).
+                long totalInodes = totalEntries + 3;
+                long totalSize = diskSize;
 
-            // ── Step 2: Add requested free blocks/files slop ──
-            totalSize += freeblocks;
-            totalInodes += freefiles;
-            if (freefilepc > 0)
-                totalInodes = totalInodes * (100 + freefilepc) / 100;
-            if (freeblockpc > 0)
-                totalSize = totalSize * (100 + freeblockpc) / 100;
+                // ── Step 2: Add requested free blocks/files slop ──
+                totalSize += freeblocks;
+                totalInodes += freefiles;
+                if (freefilepc > 0)
+                    totalInodes = totalInodes * (100 + freefilepc) / 100;
+                if (freeblockpc > 0)
+                    totalSize = totalSize * (100 + freeblockpc) / 100;
 
-            // ── Step 3: Add structural overhead (per-CG metadata + minfree) ──
-            // Compute CG layout offsets using the same formulas as WriteFilesystem.
-            // Each CG has dblkno fragments of metadata before data starts.
-            int inodeSize = InodeSizeForFormat;
-            int fragsPerBlock = BlockSize / FragmentSize;
-            int inodesPerBlock = BlockSize / inodeSize;
+                // ── Step 3: Add structural overhead (per-CG metadata + minfree) ──
+                // Compute CG layout offsets using the same formulas as WriteFilesystem.
+                // Each CG has dblkno fragments of metadata before data starts.
+                int inodeSize = InodeSizeForFormat;
+                int fragsPerBlock = BlockSize / FragmentSize;
+                int inodesPerBlock = BlockSize / inodeSize;
 
-            int sblkno = AlignUpInt(
-                (Ufs2Constants.SuperblockOffset + Ufs2Constants.SuperblockSize + FragmentSize - 1) / FragmentSize,
-                fragsPerBlock);
-            int cblkno = sblkno + AlignUpInt(
-                (Ufs2Constants.SuperblockSize + FragmentSize - 1) / FragmentSize,
-                fragsPerBlock);
-            int iblkno = cblkno + fragsPerBlock;
+                int sblkno = AlignUpInt(
+                    (Ufs2Constants.SuperblockOffset + Ufs2Constants.SuperblockSize + FragmentSize - 1) / FragmentSize,
+                    fragsPerBlock);
+                int cblkno = sblkno + AlignUpInt(
+                    (Ufs2Constants.SuperblockSize + FragmentSize - 1) / FragmentSize,
+                    fragsPerBlock);
+                int iblkno = cblkno + fragsPerBlock;
 
-            // Estimate ipg (inodes per group) to predict the CG layout that
-            // WriteFilesystem will produce after step 7 sets BytesPerInode.
-            int ipg;
-            if (BytesPerInode > 0)
-            {
-                ipg = InodesPerGroup;
-            }
-            else if (totalInodes > 0)
-            {
-                // Auto-density: estimate what ComputeInodesPerGroup will compute.
-                int defaultFpg = InodesPerGroup * fragsPerBlock;
-                // Use 20% overhead estimate to approximate the final image size
-                // (minfree 8% + CG metadata ~2-5% + safety margin)
-                long estTotalSize = Math.Max(totalSize * 120 / 100, (long)BlockSize * 16);
-                long estTotalFrags = estTotalSize / FragmentSize;
-                int estNumCg = Math.Max(1, (int)((estTotalFrags + defaultFpg - 1) / defaultFpg));
-                ipg = (int)(totalInodes / estNumCg);
-                ipg = Math.Max(((ipg + inodesPerBlock - 1) / inodesPerBlock) * inodesPerBlock, inodesPerBlock);
-            }
-            else
-            {
-                ipg = InodesPerGroup;
-            }
+                // Estimate ipg (inodes per group) to predict the CG layout that
+                // WriteFilesystem will produce after step 7 sets BytesPerInode.
+                int ipg;
+                if (BytesPerInode > 0)
+                {
+                    ipg = InodesPerGroup;
+                }
+                else if (totalInodes > 0)
+                {
+                    // Auto-density: estimate what ComputeInodesPerGroup will compute.
+                    int defaultFpg = InodesPerGroup * fragsPerBlock;
+                    // Use 20% overhead estimate to approximate the final image size
+                    // (minfree 8% + CG metadata ~2-5% + safety margin)
+                    long estTotalSize = Math.Max(totalSize * 120 / 100, (long)BlockSize * 16);
+                    long estTotalFrags = estTotalSize / FragmentSize;
+                    int estNumCg = Math.Max(1, (int)((estTotalFrags + defaultFpg - 1) / defaultFpg));
+                    ipg = (int)(totalInodes / estNumCg);
+                    ipg = Math.Max(((ipg + inodesPerBlock - 1) / inodesPerBlock) * inodesPerBlock, inodesPerBlock);
+                }
+                else
+                {
+                    ipg = InodesPerGroup;
+                }
 
-            int inodeblks = ((ipg + inodesPerBlock - 1) / inodesPerBlock) * fragsPerBlock;
-            int dblkno = iblkno + inodeblks;
-            bool autoMaxBpcg = false;
-            if (BlocksPerCylGroup <= 0)
-            {
-                // Auto maxbpcg: choose the largest blocks/group that still provides
-                // enough cylinder groups to fit all required inodes.
-                int requiredCgForInodes = 1;
-                if (totalInodes > 0 && ipg > 0)
-                    requiredCgForInodes = Math.Max(1, (int)((totalInodes + ipg - 1) / ipg));
+                int inodeblks = ((ipg + inodesPerBlock - 1) / inodesPerBlock) * fragsPerBlock;
+                int dblkno = iblkno + inodeblks;
+                bool autoMaxBpcg = false;
+                if (BlocksPerCylGroup <= 0)
+                {
+                    // Auto maxbpcg: choose the largest blocks/group that still provides
+                    // enough cylinder groups to fit all required inodes.
+                    int requiredCgForInodes = 1;
+                    if (totalInodes > 0 && ipg > 0)
+                        requiredCgForInodes = Math.Max(1, (int)((totalInodes + ipg - 1) / ipg));
 
-                long minSizeForCalc = Math.Max(totalSize, (long)BlockSize * 16);
-                long totalBlocksEstimate = Math.Max(1, (minSizeForCalc + BlockSize - 1) / BlockSize);
-                long autoBpcg = (totalBlocksEstimate + requiredCgForInodes - 1) / requiredCgForInodes;
+                    long minSizeForCalc = Math.Max(totalSize, (long)BlockSize * 16);
+                    long totalBlocksEstimate = Math.Max(1, (minSizeForCalc + BlockSize - 1) / BlockSize);
+                    long autoBpcg = (totalBlocksEstimate + requiredCgForInodes - 1) / requiredCgForInodes;
 
-                long maxBpcgByInt = Math.Max(1, int.MaxValue / fragsPerBlock);
-                if (autoBpcg > maxBpcgByInt)
-                    autoBpcg = maxBpcgByInt;
+                    long maxBpcgByInt = Math.Max(1, int.MaxValue / fragsPerBlock);
+                    if (autoBpcg > maxBpcgByInt)
+                        autoBpcg = maxBpcgByInt;
 
-                BlocksPerCylGroup = (int)Math.Max(1, autoBpcg);
-                autoMaxBpcg = true;
-            }
+                    BlocksPerCylGroup = (int)Math.Max(1, autoBpcg);
+                    autoMaxBpcg = true;
+                }
 
-            int fragsPerGroup = BlocksPerCylGroup * fragsPerBlock;
+                int fragsPerGroup = BlocksPerCylGroup * fragsPerBlock;
 
-            // dataFragsPerCg: usable data fragments per CG (metadata consumes dblkno frags)
-            int dataFragsPerCg = fragsPerGroup - dblkno;
-            if (dataFragsPerCg < fragsPerBlock)
-                dataFragsPerCg = fragsPerBlock;
+                // dataFragsPerCg: usable data fragments per CG (metadata consumes dblkno frags)
+                int dataFragsPerCg = fragsPerGroup - dblkno;
+                if (dataFragsPerCg < fragsPerBlock)
+                    dataFragsPerCg = fragsPerBlock;
 
-            // Apply minfree: the reserved percentage reduces usable data capacity
-            long dataSize = totalSize;
-            if (MinFreePercent > 0)
-                dataSize = dataSize * (100 + MinFreePercent) / 100;
+                // Apply minfree: the reserved percentage reduces usable data capacity
+                long dataSize = totalSize;
+                if (MinFreePercent > 0)
+                    dataSize = dataSize * (100 + MinFreePercent) / 100;
 
-            // Compute total image size by scaling data with per-CG overhead ratio.
-            // Each CG of fragsPerGroup fragments has dataFragsPerCg usable data fragments,
-            // so the overhead ratio is fragsPerGroup / dataFragsPerCg.
-            long dataFragsNeeded = (dataSize + FragmentSize - 1) / FragmentSize;
+                // Compute total image size by scaling data with per-CG overhead ratio.
+                // Each CG of fragsPerGroup fragments has dataFragsPerCg usable data fragments,
+                // so the overhead ratio is fragsPerGroup / dataFragsPerCg.
+                long dataFragsNeeded = (dataSize + FragmentSize - 1) / FragmentSize;
 
-            // Estimate number of CGs for CG summary area size calculation
-            int estNumCGs = Math.Max(1, (int)((dataFragsNeeded + dataFragsPerCg - 1) / dataFragsPerCg));
-            int csSize = AlignUpInt(estNumCGs * Ufs2Constants.CsumStructSize, FragmentSize);
+                // Estimate number of CGs for CG summary area size calculation
+                int estNumCGs = Math.Max(1, (int)((dataFragsNeeded + dataFragsPerCg - 1) / dataFragsPerCg));
+                int csSize = AlignUpInt(estNumCGs * Ufs2Constants.CsumStructSize, FragmentSize);
 
-            // Fixed overhead: primary superblock area + CG summary + root directory block
-            int sblockOffset = (FilesystemFormat == 1)
-                ? Ufs2Constants.SuperblockSize
-                : Ufs2Constants.SuperblockOffset;
-            long fixedOverhead = AlignUp(sblockOffset + Ufs2Constants.SuperblockSize, BlockSize)
-                               + csSize
-                               + BlockSize;
+                // Fixed overhead: primary superblock area + CG summary + root directory block
+                int sblockOffset = (FilesystemFormat == 1)
+                    ? Ufs2Constants.SuperblockSize
+                    : Ufs2Constants.SuperblockOffset;
+                long fixedOverhead = AlignUp(sblockOffset + Ufs2Constants.SuperblockSize, BlockSize)
+                                   + csSize
+                                   + BlockSize;
 
-            // Scale data by CG overhead ratio: ceil(dataFrags * fpg / dataFragsPerCg) gives
-            // the total fragments needed including per-CG metadata, converted to bytes.
-            totalSize = ((dataFragsNeeded * fragsPerGroup + dataFragsPerCg - 1) / dataFragsPerCg) * FragmentSize
-                      + fixedOverhead;
+                // Scale data by CG overhead ratio: ceil(dataFrags * fpg / dataFragsPerCg) gives
+                // the total fragments needed including per-CG metadata, converted to bytes.
+                totalSize = ((dataFragsNeeded * fragsPerGroup + dataFragsPerCg - 1) / dataFragsPerCg) * FragmentSize
+                          + fixedOverhead;
 
-            // ── Step 4: Enforce minimum size ──
-            // The filesystem requires at least 16 blocks to fit superblock, CG, and inodes
-            long fsMinSize = (long)BlockSize * 16;
-            if (totalSize < fsMinSize)
-                totalSize = fsMinSize;
-            if (minimumSize > 0 && totalSize < minimumSize)
-                totalSize = minimumSize;
+                // ── Step 4: Enforce minimum size ──
+                // The filesystem requires at least 16 blocks to fit superblock, CG, and inodes
+                long fsMinSize = (long)BlockSize * 16;
+                if (totalSize < fsMinSize)
+                    totalSize = fsMinSize;
+                if (minimumSize > 0 && totalSize < minimumSize)
+                    totalSize = minimumSize;
 
-            // ── Step 5: Round up to block boundary ──
-            totalSize = AlignUp(totalSize, BlockSize);
+                // ── Step 5: Round up to block boundary ──
+                totalSize = AlignUp(totalSize, BlockSize);
 
-            // ── Step 6: Apply roundup value ──
-            if (roundup > 0)
-                totalSize = AlignUp(totalSize, roundup);
+                // ── Step 6: Apply roundup value ──
+                if (roundup > 0)
+                    totalSize = AlignUp(totalSize, roundup);
 
-            // ── Step 7: Auto-calculate density if not explicitly set ──
-            // FreeBSD: density = size / inodes + 1 (when -o density not specified)
-            bool autoDensity = false;
-            if (BytesPerInode <= 0 && totalInodes > 0)
-            {
-                BytesPerInode = (int)Math.Min(totalSize / totalInodes + 1, int.MaxValue);
-                autoDensity = true;
-            }
+                // ── Step 7: Auto-calculate density if not explicitly set ──
+                // FreeBSD: density = size / inodes + 1 (when -o density not specified)
+                bool autoDensity = false;
+                if (BytesPerInode <= 0 && totalInodes > 0)
+                {
+                    BytesPerInode = (int)Math.Min(totalSize / totalInodes + 1, int.MaxValue);
+                    autoDensity = true;
+                }
 
-            // ── Step 8: Check maximum size ──
-            if (maximumSize > 0 && totalSize > maximumSize)
-                throw new ArgumentException(
-                    $"Image size ({totalSize:N0} bytes) exceeds maximum size ({maximumSize:N0} bytes).");
+                // ── Step 8: Check maximum size ──
+                if (maximumSize > 0 && totalSize > maximumSize)
+                    throw new ArgumentException(
+                        $"Image size ({totalSize:N0} bytes) exceeds maximum size ({maximumSize:N0} bytes).");
 
-            (Output ?? Console.Out).WriteLine($"  Calculated size of '{imagePath}': {totalSize:N0} bytes, {totalInodes} inodes");
+                (Output ?? Console.Out).WriteLine($"  Calculated size of '{imagePath}': {totalSize:N0} bytes, {totalInodes} inodes");
 
-            // ── Step 9: Create image and populate ──
-            (Output ?? Console.Out).WriteLine($"  Input directory: {directoryPath}");
-            (Output ?? Console.Out).WriteLine($"  Directory size:  {dirSize:N0} bytes ({dirSize / (1024.0 * 1024):F2} MB)");
-            (Output ?? Console.Out).WriteLine($"  Image size:      {totalSize:N0} bytes ({totalSize / (1024 * 1024)} MB)");
-            if (autoDensity)
-                (Output ?? Console.Out).WriteLine($"  Auto density:    {BytesPerInode:N0} bytes/inode");
-            if (autoMaxBpcg)
-                (Output ?? Console.Out).WriteLine($"  Auto maxbpcg:    {BlocksPerCylGroup:N0} blocks/CG");
-            (Output ?? Console.Out).WriteLine();
+                // ── Step 9: Create image and populate ──
+                (Output ?? Console.Out).WriteLine($"  Input directory: {directoryPath}");
+                (Output ?? Console.Out).WriteLine($"  Directory size:  {dirSize:N0} bytes ({dirSize / (1024.0 * 1024):F2} MB)");
+                (Output ?? Console.Out).WriteLine($"  Image size:      {totalSize:N0} bytes ({totalSize / (1024 * 1024)} MB)");
+                if (autoDensity)
+                    (Output ?? Console.Out).WriteLine($"  Auto density:    {BytesPerInode:N0} bytes/inode");
+                if (autoMaxBpcg)
+                    (Output ?? Console.Out).WriteLine($"  Auto maxbpcg:    {BlocksPerCylGroup:N0} blocks/CG");
+                (Output ?? Console.Out).WriteLine();
 
-            CreateImage(imagePath, totalSize);
+                CreateImage(imagePath, totalSize);
 
-            if (!DryRun)
-            {
-                (Output ?? Console.Out).WriteLine($"  Populating '{imagePath}'");
-                PopulateFromDirectory(imagePath, directoryPath);
-                (Output ?? Console.Out).WriteLine($"  Image '{imagePath}' complete");
-            }
+                if (!DryRun)
+                {
+                    (Output ?? Console.Out).WriteLine($"  Populating '{imagePath}'");
+                    PopulateFromDirectory(imagePath, directoryPath);
+                    (Output ?? Console.Out).WriteLine($"  Image '{imagePath}' complete");
+                }
 
-            return totalSize;
+                return totalSize;
             }
             finally
             {
@@ -2554,7 +2639,7 @@ namespace UFS2Tool
                 throw new ArgumentException(
                     $"Directory entry record length ({recLen}) exceeds maximum ushort value ({ushort.MaxValue}). " +
                     $"This indicates a configuration error with DIRBLKSIZ.");
-            
+
             return new Ufs2DirectoryEntry
             {
                 Inode = 0,         // d_ino = 0 means "empty/deleted slot"
@@ -2620,14 +2705,14 @@ namespace UFS2Tool
                         // Skip to the next DIRBLKSIZ-aligned boundary within the block
                         if (ms.Position + remainingInChunk >= blockSize)
                             break; // No more space in this block
-                        
+
                         // Write a padding/sentinel entry to fill the gap
                         // Per FreeBSD ufs_dirbadentry(): each DIRBLKSIZ chunk must contain
                         // valid directory entries. A padding entry has d_ino=0 but must
                         // have a valid d_reclen that covers the remaining space.
                         var paddingEntry = CreatePaddingDirEntry(remainingInChunk);
                         paddingEntry.WriteTo(dw);
-                        
+
                         posInChunk = 0;
                         remainingInChunk = dirBlkSiz;
                     }
@@ -2704,7 +2789,7 @@ namespace UFS2Tool
                 // cause infinite loops when traversing.
                 long currentPos = ms.Position;
                 int offsetInChunk = (int)(currentPos % dirBlkSiz);
-                
+
                 // If we're not at a DIRBLKSIZ boundary, fill to the next boundary
                 if (offsetInChunk != 0)
                 {
@@ -2713,7 +2798,7 @@ namespace UFS2Tool
                     paddingEntry.WriteTo(dw);
                     currentPos = ms.Position;
                 }
-                
+
                 // Fill all remaining complete DIRBLKSIZ chunks in the block
                 while (currentPos + dirBlkSiz <= blockSize)
                 {

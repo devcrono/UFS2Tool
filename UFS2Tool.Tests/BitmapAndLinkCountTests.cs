@@ -1,12 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.IO;
-using System.Linq;
-using System.Collections.Generic;
-using UFS2Tool;
-
 namespace UFS2Tool.Tests
 {
     public class BitmapAndLinkCountTests : IDisposable
@@ -149,7 +143,7 @@ namespace UFS2Tool.Tests
                 // Count free blocks and free fragment remainder from bitmap
                 int fpb = sb.FragsPerBlock;
                 int bitmapFreeBlocks = 0;
-                
+
                 // Count free fragments from bitmap (all fragments marked as free)
                 int totalBitmapFreeFrags = 0;
                 for (int f = 0; f < usableFrags; f++)
@@ -248,7 +242,7 @@ namespace UFS2Tool.Tests
                         // Count full data blocks at full-block granularity
                         long fullBlocks = inode.Size / sb.BSize;
                         expectedFrags = fullBlocks * fragsPerBlock;
-                        
+
                         // Count the last (partial) block at fragment granularity
                         long tailBytes = inode.Size % sb.BSize;
                         if (tailBytes > 0)
@@ -379,7 +373,7 @@ namespace UFS2Tool.Tests
                     // Count full data blocks at full-block granularity
                     long fullBlocks = (inode.Size > 0) ? inode.Size / sb.BSize : 0;
                     long expectedFrags = fullBlocks * fragsPerBlock;
-                    
+
                     // Count the last (partial) block at fragment granularity
                     long tailBytes = (inode.Size > 0) ? inode.Size % sb.BSize : 0;
                     if (tailBytes > 0)
@@ -387,7 +381,7 @@ namespace UFS2Tool.Tests
                         long tailFrags = (tailBytes + sb.FSize - 1) / sb.FSize;
                         expectedFrags += tailFrags;
                     }
-                    
+
                     long expectedBlocks512 = expectedFrags * (sb.FSize / 512);
                     Assert.True(inode.Blocks == expectedBlocks512,
                         $"Inode {ino}: di_blocks={inode.Blocks} expected {expectedBlocks512} (size={inode.Size})");
@@ -589,7 +583,7 @@ namespace UFS2Tool.Tests
                     {
                         long fullBlocks = inode.Size / sb.BSize;
                         dataFrags = fullBlocks * fragsPerBlock;
-                    
+
                         long tailBytes = inode.Size % sb.BSize;
                         if (tailBytes > 0)
                         {
@@ -881,7 +875,7 @@ namespace UFS2Tool.Tests
                 // Calculate data fragments - count full blocks and last partial block at fragment granularity
                 long fullBlocks = (inode.Size > 0) ? inode.Size / sb.BSize : 0;
                 long dataFrags = fullBlocks * fragsPerBlock;
-                
+
                 long tailBytes = (inode.Size > 0) ? inode.Size % sb.BSize : 0;
                 if (tailBytes > 0)
                 {

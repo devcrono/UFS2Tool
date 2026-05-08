@@ -19,11 +19,11 @@
             <Grid ColumnDefinitions="100,*,Auto,16,100,*" RowDefinitions="Auto" ColumnSpacing="8">
                 <TextBlock Grid.Column="0" Text="{Binding Loc[ImagePath]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding ImagePath}"
-                         Watermark="{Binding Loc[ImagePathFSWatermark]}"/>
+                         PlaceholderText="{Binding Loc[ImagePathFSWatermark]}"/>
                 <Button Grid.Column="2" Content="..." Click="BrowseImagePath_Click"
                         Padding="12,6"/>
                 <TextBlock Grid.Column="4" Text="{Binding Loc[FSPath]}" VerticalAlignment="Center"/>
-                <TextBox Grid.Column="5" Text="{Binding FsPath}" Watermark="/"/>
+                <TextBox Grid.Column="5" Text="{Binding FsPath}" PlaceholderText="/"/>
             </Grid>
         </Border>
 
@@ -62,15 +62,15 @@
             <Grid ColumnDefinitions="140,*,16,140,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Loc[LocalPath]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding LocalPath}"
-                         Watermark="{Binding Loc[LocalPathWatermark]}"/>
+                         PlaceholderText="{Binding Loc[LocalPathWatermark]}"/>
 
                 <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Loc[OutputDirectory]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding OutputDirectory}"
-                         Watermark="{Binding Loc[OutputDirectoryWatermark]}"/>
+                         PlaceholderText="{Binding Loc[OutputDirectoryWatermark]}"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Loc[ChmodMode]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ChmodMode}"
-                         Watermark="755" MaxWidth="120" HorizontalAlignment="Left"/>
+                         PlaceholderText="755" MaxWidth="120" HorizontalAlignment="Left"/>
 
                 <CheckBox Grid.Row="1" Grid.Column="3" Grid.ColumnSpan="2"
                           Content="{Binding Loc[RecursiveChmod]}" IsChecked="{Binding ChmodRecursive}"
@@ -78,15 +78,15 @@
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Loc[NewName]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding NewName}"
-                         Watermark="{Binding Loc[NewNameWatermark]}"/>
+                         PlaceholderText="{Binding Loc[NewNameWatermark]}"/>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding Loc[FindPattern]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding FindPattern}"
-                         Watermark="{Binding Loc[FindPatternWatermark]}"/>
+                         PlaceholderText="{Binding Loc[FindPatternWatermark]}"/>
 
                 <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding Loc[FindTypeFilter]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding FindTypeFilter}"
-                         Watermark="{Binding Loc[FindTypeFilterWatermark]}" MaxWidth="120" HorizontalAlignment="Left"/>
+                         PlaceholderText="{Binding Loc[FindTypeFilterWatermark]}" MaxWidth="120" HorizontalAlignment="Left"/>
             </Grid>
         </Border>
 

@@ -3,16 +3,13 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
 using System.Collections.ObjectModel;
-using System.Threading.Tasks;
-using UFS2Tool;
 using UFS2Tool.GUI.Services;
 namespace UFS2Tool.GUI.ViewModels;
 
-public partial class CreateFilesystemViewModel : ViewModelBase
+public partial class CreateFilesystemViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
+    private readonly ObservableCollection<string> _outputLog = outputLog;
 
     [ObservableProperty]
     private string _imagePath = "";
@@ -81,11 +78,6 @@ public partial class CreateFilesystemViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isRunning;
-
-    public CreateFilesystemViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
 
     [RelayCommand]
     private async Task CreateFilesystemAsync()

@@ -2,7 +2,6 @@
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
 using Avalonia;
-using System;
 
 namespace UFS2Tool.GUI;
 

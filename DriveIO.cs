@@ -1,12 +1,10 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
+using Microsoft.Win32.SafeHandles;
 using System.ComponentModel;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using Microsoft.Win32.SafeHandles;
 
 namespace UFS2Tool
 {
@@ -291,7 +289,6 @@ namespace UFS2Tool
 
         private static bool TryGetLengthInfo(SafeFileHandle handle, out long size)
         {
-            size = 0;
             bool result = DeviceIoControl(handle, IOCTL_DISK_GET_LENGTH_INFO,
                 IntPtr.Zero, 0,
                 out size, sizeof(long),

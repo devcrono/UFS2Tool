@@ -3,15 +3,12 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
 using System.Collections.ObjectModel;
-using System.Threading.Tasks;
-using UFS2Tool;
 namespace UFS2Tool.GUI.ViewModels;
 
-public partial class MaintenanceViewModel : ViewModelBase
+public partial class MaintenanceViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
+    private readonly ObservableCollection<string> _outputLog = outputLog;
 
     [ObservableProperty]
     private string _imagePath = "";
@@ -54,11 +51,6 @@ public partial class MaintenanceViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _fsckResultText = "";
-
-    public MaintenanceViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
 
     private void LogMessage(string message)
     {

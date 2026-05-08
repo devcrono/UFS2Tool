@@ -1,10 +1,9 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.Diagnostics.CodeAnalysis;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using System.Diagnostics.CodeAnalysis;
 using UFS2Tool.GUI.ViewModels;
 
 namespace UFS2Tool.GUI;
@@ -21,7 +20,7 @@ public class ViewLocator : IDataTemplate
     {
         if (param is null)
             return null;
-        
+
         var name = param.GetType().FullName!.Replace("ViewModel", "View", StringComparison.Ordinal);
         var type = Type.GetType(name);
 
@@ -30,7 +29,7 @@ public class ViewLocator : IDataTemplate
             if (Activator.CreateInstance(type) is Control control)
                 return control;
         }
-        
+
         return new TextBlock { Text = "Not Found: " + name };
     }
 

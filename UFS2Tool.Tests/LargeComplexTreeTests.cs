@@ -1,12 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.IO;
-using System.Linq;
-using System.Collections.Generic;
-using UFS2Tool;
-
 namespace UFS2Tool.Tests
 {
     /// <summary>
@@ -45,7 +39,7 @@ namespace UFS2Tool.Tests
             {
                 string subDir = Path.Combine(_testDir, $"subdir_{i:D03}");
                 Directory.CreateDirectory(subDir);
-                
+
                 // Put 100 files in each subdirectory (50 * 100 = 5000 files)
                 for (int j = 0; j < 100; j++)
                 {
@@ -66,7 +60,7 @@ namespace UFS2Tool.Tests
             var creator = new Ufs2ImageCreator();
             var (_, diskSize, totalEntries) = Ufs2ImageCreator.CalculateDirectorySizes(_testDir, creator.BlockSize);
             long imageSize = creator.CalculateImageSize(diskSize);
-            
+
             creator.CreateImage(_imagePath, imageSize);
             creator.PopulateFromDirectory(_imagePath, _testDir);
 
@@ -81,17 +75,17 @@ namespace UFS2Tool.Tests
             long totalInodes = (long)sb.InodesPerGroup * sb.NumCylGroups;
             int verifiedInodes = 0;
             List<string> errors = new List<string>();
-            
+
             for (uint ino = Ufs2Constants.RootInode; ino < Math.Min(totalInodes, MaxInodesToCheck); ino++)
             {
                 var inode = image.ReadInode(ino);
                 if (inode.Mode == 0) continue; // Skip unused inodes
-                
+
                 verifiedInodes++;
-                
+
                 // Calculate expected di_blocks based on file/directory size
                 long expectedBlocks512 = CalculateExpectedDiBlocks(inode, sb, fragsPerBlock);
-                
+
                 if (inode.Blocks != expectedBlocks512)
                 {
                     string error = $"Inode {ino}: di_blocks mismatch. " +
@@ -102,14 +96,14 @@ namespace UFS2Tool.Tests
                     if (errors.Count >= 10) break;
                 }
             }
-            
+
             // Report any errors found
             if (errors.Count > 0)
             {
                 string errorReport = "di_blocks mismatches found:\n" + string.Join("\n", errors);
                 Assert.Fail(errorReport);
             }
-            
+
             // Ensure we verified a reasonable number of inodes
             Assert.True(verifiedInodes >= 5051, // At least 1 root + 50 dirs + 5000 files
                 $"Expected at least 5051 inodes, but only verified {verifiedInodes}");
@@ -133,27 +127,27 @@ namespace UFS2Tool.Tests
             var creator = new Ufs2ImageCreator();
             var (_, diskSize, _) = Ufs2ImageCreator.CalculateDirectorySizes(_testDir, creator.BlockSize);
             long imageSize = creator.CalculateImageSize(diskSize);
-            
+
             creator.CreateImage(_imagePath, imageSize);
             creator.PopulateFromDirectory(_imagePath, _testDir);
 
             // Verify we can read the root directory and all entries
             using var image = new Ufs2Image(_imagePath, readOnly: true);
             var rootEntries = image.ListDirectory(Ufs2Constants.RootInode);
-            
+
             // Should have ".", "..", and 100 subdirectories
             Assert.True(rootEntries.Count >= 102,
                 $"Root directory should have at least 102 entries, found {rootEntries.Count}");
-            
+
             // Verify all subdirectories are present
             var subdirNames = rootEntries
                 .Where(e => e.FileType == Ufs2Constants.DtDir && e.Name != "." && e.Name != "..")
                 .Select(e => e.Name)
                 .OrderBy(n => n)
                 .ToList();
-            
+
             Assert.Equal(100, subdirNames.Count);
-            
+
             // Verify we can read each subdirectory
             foreach (var entry in rootEntries)
             {
@@ -195,25 +189,25 @@ namespace UFS2Tool.Tests
             var creator = new Ufs2ImageCreator();
             var (_, diskSize, _) = Ufs2ImageCreator.CalculateDirectorySizes(_testDir, creator.BlockSize);
             long imageSize = creator.CalculateImageSize(diskSize);
-            
+
             creator.CreateImage(_imagePath, imageSize);
             creator.PopulateFromDirectory(_imagePath, _testDir);
 
             using var image = new Ufs2Image(_imagePath, readOnly: true);
             var sb = image.Superblock;
             int fragsPerBlock = sb.BSize / sb.FSize;
-            
+
             // Verify each file has correct di_blocks
             var rootEntries = image.ListDirectory(Ufs2Constants.RootInode);
             var fileEntries = rootEntries.Where(e => e.FileType == Ufs2Constants.DtReg).ToList();
-            
+
             Assert.Equal(testSizes.Length, fileEntries.Count);
-            
+
             foreach (var entry in fileEntries)
             {
                 var inode = image.ReadInode(entry.Inode);
                 long expectedBlocks512 = CalculateExpectedDiBlocks(inode, sb, fragsPerBlock);
-                
+
                 Assert.Equal(expectedBlocks512, inode.Blocks);
             }
         }
@@ -227,7 +221,7 @@ namespace UFS2Tool.Tests
         private long CalculateExpectedDiBlocks(Ufs2Inode inode, Ufs2Superblock sb, int fragsPerBlock)
         {
             int sectorsPerFrag = sb.FSize / Ufs2Constants.DefaultSectorSize;
-            
+
             // Count full data blocks at full-block granularity
             long fullBlocks = (inode.Size > 0) ? inode.Size / sb.BSize : 0;
             long dataFrags = fullBlocks * fragsPerBlock;
@@ -239,7 +233,7 @@ namespace UFS2Tool.Tests
                 long tailFrags = (tailBytes + sb.FSize - 1) / sb.FSize;
                 dataFrags += tailFrags;
             }
-            
+
             // Count metadata blocks: for simplicity, count non-zero indirect block pointers.
             // Note: This simplified count works for small to medium files (< ~134 MB with default settings)
             // because they only use direct blocks or single-indirect blocks.
@@ -253,9 +247,9 @@ namespace UFS2Tool.Tests
                 if (inode.IndirectBlocks[i] != 0)
                     metadataBlockCount++;
             }
-            
+
             long metadataFrags = metadataBlockCount * fragsPerBlock;
-            
+
             long blocks512 = (dataFrags + metadataFrags) * sectorsPerFrag;
             return blocks512;
         }

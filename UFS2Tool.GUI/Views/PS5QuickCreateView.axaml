@@ -77,7 +77,7 @@
                         <DockPanel>
                             <Button DockPanel.Dock="Right" Content="..." Click="BrowseInputDirectory_Click"
                                     Padding="12,6" Margin="8,0,0,0"/>
-                            <TextBox Text="{Binding InputDirectory}" Watermark="{Binding Loc[PS5InputDirectoryWatermark]}"/>
+                            <TextBox Text="{Binding InputDirectory}" PlaceholderText="{Binding Loc[PS5InputDirectoryWatermark]}"/>
                         </DockPanel>
                         <TextBlock Text="{Binding Loc[PS5InputDirectoryHint]}"
                                    FontSize="12" Foreground="{DynamicResource SystemBaseMediumColor}"/>
@@ -92,7 +92,7 @@
                         <DockPanel>
                             <Button DockPanel.Dock="Right" Content="..." Click="BrowseImagePath_Click"
                                     Padding="12,6" Margin="8,0,0,0"/>
-                            <TextBox Text="{Binding ImagePath}" Watermark="{Binding Loc[PS5FilenameWatermark]}"/>
+                            <TextBox Text="{Binding ImagePath}" PlaceholderText="{Binding Loc[PS5FilenameWatermark]}"/>
                         </DockPanel>
                     </StackPanel>
                 </Border>
@@ -109,7 +109,7 @@
                         <DockPanel>
                             <Button DockPanel.Dock="Right" Content="..." Click="BrowseBatchOutputDirectory_Click"
                                     Padding="12,6" Margin="8,0,0,0"/>
-                            <TextBox Text="{Binding BatchOutputDirectory}" Watermark="{Binding Loc[PS5BatchOutputDirWatermark]}"/>
+                            <TextBox Text="{Binding BatchOutputDirectory}" PlaceholderText="{Binding Loc[PS5BatchOutputDirWatermark]}"/>
                         </DockPanel>
                         <TextBlock Text="{Binding Loc[PS5BatchOutputDirHint]}"
                                    FontSize="12" Foreground="{DynamicResource SystemBaseMediumColor}"/>

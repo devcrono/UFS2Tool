@@ -28,7 +28,7 @@
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="..." Click="BrowseSourceImage_Click"
                                 Padding="12,6" Margin="8,0,0,0"/>
-                        <TextBox Text="{Binding SourceImagePath}" Watermark="{Binding Loc[WriteSourceImageWatermark]}"/>
+                        <TextBox Text="{Binding SourceImagePath}" PlaceholderText="{Binding Loc[WriteSourceImageWatermark]}"/>
                     </DockPanel>
                     <TextBlock Text="{Binding Loc[WriteSourceImageHint]}"
                                FontSize="12" Foreground="{DynamicResource SystemBaseMediumColor}"/>
@@ -44,7 +44,7 @@
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Loc[WriteDevicePath]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TargetDevicePath}"
-                                 Watermark="{Binding Loc[WriteDevicePathWatermark]}"/>
+                                 PlaceholderText="{Binding Loc[WriteDevicePathWatermark]}"/>
                         <Button Grid.Row="0" Grid.Column="3" Content="{Binding Loc[WriteRefreshDrives]}"
                                 Command="{Binding RefreshDrivesCommand}"
                                 IsEnabled="{Binding !IsWriting}" Padding="16,6"/>

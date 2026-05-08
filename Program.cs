@@ -1,8 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using UFS2Tool;
 
@@ -1425,7 +1423,7 @@ namespace Ufs2Tool
                 if (oflag)
                 {
                     string name = "optimization preference";
-                    string OptName(int v) => v == Ufs2Constants.FsOptTime ? "time" : v == Ufs2Constants.FsOptSpace ? "space" : $"unknown({v})";
+                    static string OptName(int v) => v == Ufs2Constants.FsOptTime ? "time" : v == Ufs2Constants.FsOptSpace ? "space" : $"unknown({v})";
                     if (sb.Optimization == ovalue)
                         Console.Error.WriteLine($"{name} remains unchanged as {OptName(ovalue)}");
                     else
@@ -1807,9 +1805,16 @@ namespace Ufs2Tool
                 return 1;
             }
 
-            // Open image — read-only when -n is specified
+            // Open image — read-only when -n is specified.
+            // -b altsuperblock: read SB from the given 512-byte sector instead of
+            // the primary location (matches FreeBSD fsck_ffs(8) -b behavior).
             bool readOnly = nflag;
-            using var image = new Ufs2Image(target, readOnly: readOnly);
+            using var image = altSuperblock >= 0
+                ? new Ufs2Image(target, readOnly: readOnly, altSuperblockSector: altSuperblock)
+                : new Ufs2Image(target, readOnly: readOnly);
+
+            if (altSuperblock >= 0)
+                Console.WriteLine($"Using alternate super-block at sector {altSuperblock}");
 
             // Check clean flag — skip if filesystem is clean (unless -f)
             var sb = image.Superblock;
@@ -1837,11 +1842,12 @@ namespace Ufs2Tool
             foreach (var err in result.Errors)
                 Console.Error.WriteLine(err);
 
-            // Determine exit code per FreeBSD convention
+            // Determine exit code per FreeBSD fsck_ffs(8) convention:
+            //   0 = file system is clean (or check completed without unrecoverable errors)
+            //   8 = unrecoverable error (corrupt superblock, etc.)
+            // Repair (FSCK_REBOOT, exit 4) is not implemented — we only consistency-check.
             if (result.Errors.Count > 0)
-                return 8; // General error
-            if (!result.Clean)
-                return 0; // Found issues but completed check
+                return 8;
             return 0;
         }
 
@@ -2511,7 +2517,7 @@ namespace Ufs2Tool
                 return 1;
             }
 
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (!OperatingSystem.IsWindows())
             {
                 Console.Error.WriteLine("Error: mount_udf is only supported on Windows.");
                 Console.Error.WriteLine("       The Dokan driver must be installed.");
@@ -2615,12 +2621,13 @@ namespace Ufs2Tool
                 return 1;
             }
 
-            // Note: Write support allows modifying existing files on the mounted filesystem.
-            // Creating new files or deleting files is not supported through the mount interface.
+            // Note: The mounted filesystem supports modifying, deleting, renaming and
+            // truncating existing files and (empty) directories. Creating brand new
+            // files or directories through the mount interface is not supported.
             if (!readOnly)
             {
-                Console.WriteLine("Warning: Read-write mount enabled. Existing files can be modified.");
-                Console.WriteLine("         Creating new files or deleting files is not supported.");
+                Console.WriteLine("Warning: Read-write mount enabled. Existing files can be modified or deleted.");
+                Console.WriteLine("         Creating new files or directories is not supported.");
             }
 
             Console.WriteLine($"Mounting '{imagePath}' on {mountPoint}");
@@ -2631,21 +2638,54 @@ namespace Ufs2Tool
             {
                 using var dokanOps = new Ufs2DokanOperations(imagePath, readOnly);
                 DokanNet.Logging.ILogger dokanLogger = verbose
-                    ? new DokanNet.Logging.ConsoleLogger()
+                    ? new DokanNet.Logging.ConsoleLogger("[Dokan] ")
                     : new DokanNet.Logging.NullLogger();
+
                 var mountOptions = DokanNet.DokanOptions.FixedDrive;
                 if (readOnly)
                     mountOptions |= DokanNet.DokanOptions.WriteProtection;
 
-                DokanNet.Dokan.Init();
+                // DokanNet 2.3.x uses an instance-based API: a Dokan instance owns the
+                // native runtime, and DokanInstanceBuilder configures and creates a
+                // running file system that can be awaited until it is closed.
+                using var dokan = new DokanNet.Dokan(dokanLogger);
+
+                var dokanBuilder = new DokanNet.DokanInstanceBuilder(dokan)
+                    .ConfigureLogger(() => dokanLogger)
+                    .ConfigureOptions(options =>
+                    {
+                        options.Options = mountOptions;
+                        options.MountPoint = mountPoint;
+                        options.SingleThread = false;
+                    });
+
+                using var dokanInstance = dokanBuilder.Build(dokanOps);
+
+                // Allow Ctrl+C to gracefully unmount instead of killing the process
+                // mid-operation, which leaves the drive letter in a stuck state.
+                ConsoleCancelEventHandler cancelHandler = (_, e) =>
+                {
+                    e.Cancel = true;
+                    Console.WriteLine();
+                    Console.WriteLine("Unmounting...");
+                    try
+                    {
+                        if (OperatingSystem.IsWindows())
+                            dokan.RemoveMountPoint(mountPoint);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Warning: RemoveMountPoint failed: {ex.Message}");
+                    }
+                };
+                Console.CancelKeyPress += cancelHandler;
                 try
                 {
-                    DokanNet.Dokan.Mount(dokanOps, mountPoint, mountOptions, singleThread: false,
-                        logger: dokanLogger);
+                    dokanInstance.WaitForFileSystemClosed(uint.MaxValue);
                 }
                 finally
                 {
-                    DokanNet.Dokan.Shutdown();
+                    Console.CancelKeyPress -= cancelHandler;
                 }
 
                 Console.WriteLine("Filesystem unmounted.");
@@ -2677,7 +2717,7 @@ namespace Ufs2Tool
                 return 1;
             }
 
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (!OperatingSystem.IsWindows())
             {
                 Console.Error.WriteLine("Error: umount_udf is only supported on Windows.");
                 return 1;
@@ -2697,7 +2737,10 @@ namespace Ufs2Tool
 
             try
             {
-                bool result = DokanNet.Dokan.Unmount(driveLetter);
+                // DokanNet 2.3.x: Unmount is now an instance method on Dokan.
+                var dokanLogger = new DokanNet.Logging.NullLogger();
+                using var dokan = new DokanNet.Dokan(dokanLogger);
+                bool result = dokan.Unmount(driveLetter);
                 if (result)
                 {
                     Console.WriteLine($"Successfully unmounted {char.ToUpper(driveLetter)}:");

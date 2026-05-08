@@ -1,13 +1,11 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.ComponentModel;
-using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using System.ComponentModel;
 using UFS2Tool.GUI.ViewModels;
 
 namespace UFS2Tool.GUI.Views;
@@ -86,11 +84,11 @@ public partial class ContentBrowserView : UserControl
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             AllowMultiple = false,
-            FileTypeFilter = new[]
-            {
-                new FilePickerFileType("Image files") { Patterns = new[] { "*.img" } },
-                new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-            },
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Image files") { Patterns = ["*.img"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
         });
 
         if (files.Count > 0 && DataContext is ContentBrowserViewModel vm)
@@ -133,10 +131,10 @@ public partial class ContentBrowserView : UserControl
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             AllowMultiple = false,
-            FileTypeFilter = new[]
-            {
-                new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-            },
+            FileTypeFilter =
+            [
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
         });
 
         if (files.Count > 0)

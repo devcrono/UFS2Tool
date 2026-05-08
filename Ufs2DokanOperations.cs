@@ -1,13 +1,9 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Runtime.InteropServices;
+using DokanNet;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
-using DokanNet;
 using FileAccess = DokanNet.FileAccess;
 
 namespace UFS2Tool
@@ -19,23 +15,17 @@ namespace UFS2Tool
     /// This provides read-only access to the UFS filesystem contents through
     /// a virtual Windows drive. The Dokan driver must be installed on the system.
     /// </summary>
+    /// <remarks>
+    /// Create a new Dokan filesystem backed by a UFS image.
+    /// </remarks>
+    /// <param name="imagePath">Path to the UFS1/UFS2 filesystem image.</param>
+    /// <param name="readOnly">Mount as read-only.</param>
     [SupportedOSPlatform("windows")]
-    public class Ufs2DokanOperations : IDokanOperations, IDisposable
+    public class Ufs2DokanOperations(string imagePath, bool readOnly) : IDokanOperations, IDisposable
     {
-        private readonly Ufs2Image _image;
+        private readonly Ufs2Image _image = new(imagePath, readOnly: readOnly);
         private readonly object _lock = new();
-        private readonly bool _readOnly;
-
-        /// <summary>
-        /// Create a new Dokan filesystem backed by a UFS image.
-        /// </summary>
-        /// <param name="imagePath">Path to the UFS1/UFS2 filesystem image.</param>
-        /// <param name="readOnly">Mount as read-only.</param>
-        public Ufs2DokanOperations(string imagePath, bool readOnly)
-        {
-            _readOnly = readOnly;
-            _image = new Ufs2Image(imagePath, readOnly: readOnly);
-        }
+        private readonly bool _readOnly = readOnly;
 
         public void Dispose()
         {
@@ -72,6 +62,19 @@ namespace UFS2Tool
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Resolve a Windows path to a UFS inode number, using the cached inode in
+        /// <see cref="IDokanFileInfo.Context"/> when available. The cache is populated
+        /// by <see cref="CreateFile"/>, so subsequent operations on an open handle do
+        /// not pay the cost of walking the directory tree again.
+        /// </summary>
+        private uint? TryGetInode(string fileName, IDokanFileInfo info)
+        {
+            if (info.Context is uint cachedInode)
+                return cachedInode;
+            return TryResolvePath(fileName);
         }
 
         /// <summary>
@@ -155,7 +158,10 @@ namespace UFS2Tool
         {
             bytesRead = 0;
 
-            var inode = TryResolvePath(fileName);
+            if (offset < 0)
+                return DokanResult.InvalidParameter;
+
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
@@ -170,13 +176,10 @@ namespace UFS2Tool
             }
 
             if (offset >= fileData.Length)
-            {
-                bytesRead = 0;
                 return DokanResult.Success;
-            }
 
             int toRead = (int)Math.Min(buffer.Length, fileData.Length - offset);
-            Array.Copy(fileData, offset, buffer, 0, toRead);
+            Buffer.BlockCopy(fileData, (int)offset, buffer, 0, toRead);
             bytesRead = toRead;
             return DokanResult.Success;
         }
@@ -192,7 +195,7 @@ namespace UFS2Tool
             if (offset < 0)
                 return DokanResult.InvalidParameter;
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
@@ -210,8 +213,8 @@ namespace UFS2Tool
                     if (newSize > int.MaxValue)
                         return DokanResult.InvalidParameter;
                     byte[] newData = new byte[(int)newSize];
-                    Array.Copy(existingData, 0, newData, 0, existingData.Length);
-                    Array.Copy(buffer, 0, newData, offset, buffer.Length);
+                    Buffer.BlockCopy(existingData, 0, newData, 0, existingData.Length);
+                    Buffer.BlockCopy(buffer, 0, newData, (int)offset, buffer.Length);
 
                     string ufsPath = NormalizePath(fileName);
                     _image.ReplaceFileContent(ufsPath, newData);
@@ -239,7 +242,7 @@ namespace UFS2Tool
         {
             fileInfo = new FileInformation();
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
@@ -277,7 +280,7 @@ namespace UFS2Tool
         {
             files = [];
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.PathNotFound;
 
@@ -390,7 +393,7 @@ namespace UFS2Tool
                 return DokanResult.AccessDenied;
 
             // UFS does not use Windows file attributes; accept but ignore
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
@@ -403,7 +406,7 @@ namespace UFS2Tool
             if (_readOnly)
                 return DokanResult.AccessDenied;
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
@@ -436,10 +439,12 @@ namespace UFS2Tool
             if (_readOnly)
                 return DokanResult.AccessDenied;
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
+            // Dokan invokes DeleteFile to ask whether deletion is allowed; the actual
+            // unlink happens here for simplicity (the underlying image API is atomic).
             try
             {
                 lock (_lock)
@@ -450,6 +455,7 @@ namespace UFS2Tool
 
                     string ufsPath = NormalizePath(fileName);
                     _image.Delete(ufsPath);
+                    info.Context = null;
                 }
                 return DokanResult.Success;
             }
@@ -468,7 +474,7 @@ namespace UFS2Tool
             if (_readOnly)
                 return DokanResult.AccessDenied;
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.PathNotFound;
 
@@ -480,8 +486,18 @@ namespace UFS2Tool
                     if (!inodeData.IsDirectory)
                         return DokanResult.AccessDenied;
 
+                    // Refuse if the directory still contains user entries (anything
+                    // other than "." and "..").
+                    var entries = _image.ListDirectory(inode.Value);
+                    foreach (var e in entries)
+                    {
+                        if (e.Name != "." && e.Name != "..")
+                            return DokanResult.DirectoryNotEmpty;
+                    }
+
                     string ufsPath = NormalizePath(fileName);
                     _image.Delete(ufsPath);
+                    info.Context = null;
                 }
                 return DokanResult.Success;
             }
@@ -535,7 +551,7 @@ namespace UFS2Tool
             if (length < 0 || length > int.MaxValue)
                 return DokanResult.InvalidParameter;
 
-            var inode = TryResolvePath(fileName);
+            var inode = TryGetInode(fileName, info);
             if (inode == null)
                 return DokanResult.FileNotFound;
 
@@ -546,7 +562,7 @@ namespace UFS2Tool
                     string ufsPath = NormalizePath(fileName);
                     byte[] existingData = _image.ReadFile(inode.Value);
                     byte[] newData = new byte[(int)length];
-                    Array.Copy(existingData, 0, newData, 0, Math.Min(existingData.Length, (int)length));
+                    Buffer.BlockCopy(existingData, 0, newData, 0, Math.Min(existingData.Length, (int)length));
                     _image.ReplaceFileContent(ufsPath, newData);
                 }
                 return DokanResult.Success;
@@ -621,14 +637,9 @@ namespace UFS2Tool
         public NtStatus GetFileSecurity(string fileName, out FileSystemSecurity? security,
             AccessControlSections sections, IDokanFileInfo info)
         {
-            // UFS uses Unix permissions, not Windows ACLs.
-            // Return a default empty security descriptor so that Windows can display properties.
+            // UFS uses Unix permissions, not Windows ACLs. Returning NotImplemented
+            // tells Windows to fall back to its default handling.
             security = null;
-
-            var inode = TryResolvePath(fileName);
-            if (inode == null)
-                return DokanResult.FileNotFound;
-
             return DokanResult.NotImplemented;
         }
 

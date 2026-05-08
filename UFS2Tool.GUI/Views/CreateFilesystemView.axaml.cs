@@ -23,11 +23,11 @@ public partial class CreateFilesystemView : UserControl
         var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             DefaultExtension = "img",
-            FileTypeChoices = new[]
-            {
-                new FilePickerFileType("Image files") { Patterns = new[] { "*.img" } },
-                new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-            },
+            FileTypeChoices =
+            [
+                new FilePickerFileType("Image files") { Patterns = ["*.img"] },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
         });
 
         if (file != null && DataContext is CreateFilesystemViewModel vm)

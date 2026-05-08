@@ -1,16 +1,15 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.ComponentModel;
 using UFS2Tool.GUI.Services;
 
 namespace UFS2Tool.GUI.ViewModels;
 
 public abstract class ViewModelBase : ObservableObject
 {
-    public LocalizationManager Loc => LocalizationManager.Instance;
+    public static LocalizationManager Loc => LocalizationManager.Instance;
 
     protected ViewModelBase()
     {

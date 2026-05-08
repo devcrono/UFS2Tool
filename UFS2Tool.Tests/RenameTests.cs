@@ -1,11 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.IO;
-using System.Linq;
-using UFS2Tool;
-
 namespace UFS2Tool.Tests
 {
     /// <summary>

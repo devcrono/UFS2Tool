@@ -3,10 +3,7 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
 using System.Collections.ObjectModel;
-using System.Threading.Tasks;
-using UFS2Tool;
 using UFS2Tool.GUI.Services;
 
 namespace UFS2Tool.GUI.ViewModels;
@@ -25,9 +22,9 @@ public partial class DirectoryEntryItem : ObservableObject
     };
 }
 
-public partial class FilesystemOperationsViewModel : ViewModelBase
+public partial class FilesystemOperationsViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
+    private readonly ObservableCollection<string> _outputLog = outputLog;
 
     [ObservableProperty]
     private string _imagePath = "";
@@ -62,12 +59,7 @@ public partial class FilesystemOperationsViewModel : ViewModelBase
     [ObservableProperty]
     private string _superblockInfo = "";
 
-    public ObservableCollection<DirectoryEntryItem> DirectoryEntries { get; } = new();
-
-    public FilesystemOperationsViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
+    public ObservableCollection<DirectoryEntryItem> DirectoryEntries { get; } = [];
 
     [RelayCommand]
     private async Task ShowInfoAsync()
@@ -102,7 +94,7 @@ public partial class FilesystemOperationsViewModel : ViewModelBase
         _outputLog.Add($"[LS] Listing directory '{FsPath}' in '{ImagePath}'...");
         try
         {
-            (int fileCount, int dirCount, int symlinkCount) counts = (0, 0, 0);
+            (int fileCount, int dirCount, int symlinkCount) = (0, 0, 0);
             await Task.Run(() =>
             {
                 using var image = new Ufs2Image(ImagePath, readOnly: true);
@@ -131,13 +123,13 @@ public partial class FilesystemOperationsViewModel : ViewModelBase
                     if (entry.Inode == 0 || entry.Name == "." || entry.Name == "..") continue;
                     switch (entry.FileType)
                     {
-                        case 4: counts.dirCount++; break;
-                        case 8: counts.fileCount++; break;
-                        case 10: counts.symlinkCount++; break;
+                        case 4: dirCount++; break;
+                        case 8: fileCount++; break;
+                        case 10: symlinkCount++; break;
                     }
                 }
             });
-            _outputLog.Add($"[LS] Listed directory: {FsPath} — {counts.fileCount} file(s), {counts.dirCount} dir(s), {counts.symlinkCount} symlink(s)");
+            _outputLog.Add($"[LS] Listed directory: {FsPath} — {fileCount} file(s), {dirCount} dir(s), {symlinkCount} symlink(s)");
         }
         catch (Exception ex)
         {

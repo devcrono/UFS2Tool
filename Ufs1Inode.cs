@@ -1,9 +1,6 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.IO;
-
 namespace UFS2Tool
 {
     /// <summary>
@@ -85,18 +82,18 @@ namespace UFS2Tool
             var inode = new Ufs1Inode
             {
                 Mode = reader.ReadUInt16(),
-                NLink = reader.ReadInt16()
-            };
-            inode.DirDepth = reader.ReadUInt32(); // di_freelink/di_dirdepth
-            inode.Size = reader.ReadInt64();
-            inode.AccessTime = reader.ReadInt32();
-            inode.ATimeNsec = reader.ReadInt32();
-            inode.ModTime = reader.ReadInt32();
-            inode.MTimeNsec = reader.ReadInt32();
-            inode.ChangeTime = reader.ReadInt32();
-            inode.CTimeNsec = reader.ReadInt32();
+                NLink = reader.ReadInt16(),
+                DirDepth = reader.ReadUInt32(), // di_freelink/di_dirdepth
+                Size = reader.ReadInt64(),
+                AccessTime = reader.ReadInt32(),
+                ATimeNsec = reader.ReadInt32(),
+                ModTime = reader.ReadInt32(),
+                MTimeNsec = reader.ReadInt32(),
+                ChangeTime = reader.ReadInt32(),
+                CTimeNsec = reader.ReadInt32(),
 
-            inode.DirectBlocks = new int[Ufs2Constants.NDirect];
+                DirectBlocks = new int[Ufs2Constants.NDirect]
+            };
             for (int i = 0; i < Ufs2Constants.NDirect; i++)
                 inode.DirectBlocks[i] = reader.ReadInt32();
 

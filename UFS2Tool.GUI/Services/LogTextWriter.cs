@@ -1,11 +1,9 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System;
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Text;
 using Avalonia.Threading;
+using System.Collections.ObjectModel;
+using System.Text;
 
 namespace UFS2Tool.GUI.Services;
 
@@ -15,19 +13,14 @@ namespace UFS2Tool.GUI.Services;
 /// Carriage-return progress updates (e.g., "\r  Progress... 50%") replace the last
 /// incomplete line to avoid flooding the log with progress updates.
 /// </summary>
-public sealed class LogTextWriter : TextWriter
+public sealed class LogTextWriter(ObservableCollection<string> log) : TextWriter
 {
-    private readonly ObservableCollection<string> _log;
+    private readonly ObservableCollection<string> _log = log ?? throw new ArgumentNullException(nameof(log));
     private readonly StringBuilder _buffer = new();
     private bool _lastWasCarriageReturn;
     private bool _replaceLastLine;
 
     public override Encoding Encoding => Encoding.UTF8;
-
-    public LogTextWriter(ObservableCollection<string> log)
-    {
-        _log = log ?? throw new ArgumentNullException(nameof(log));
-    }
 
     public override void Write(char value)
     {
@@ -102,7 +95,7 @@ public sealed class LogTextWriter : TextWriter
         Dispatcher.UIThread.Post(() =>
         {
             if (replace && _log.Count > 0)
-                _log[_log.Count - 1] = line;
+                _log[^1] = line;
             else
                 _log.Add(line);
         });

@@ -19,7 +19,7 @@
             <Grid ColumnDefinitions="100,*,Auto,16,Auto" ColumnSpacing="8">
                 <TextBlock Grid.Column="0" Text="{Binding Loc[ImagePath]}" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding ImagePath}"
-                         Watermark="{Binding Loc[ImagePathFSWatermark]}"/>
+                         PlaceholderText="{Binding Loc[ImagePathFSWatermark]}"/>
                 <Button Grid.Column="2" Content="..." Click="BrowseImagePath_Click"
                         Padding="12,6"/>
                 <Button Grid.Column="4" Content="{Binding Loc[BrowserLoad]}"

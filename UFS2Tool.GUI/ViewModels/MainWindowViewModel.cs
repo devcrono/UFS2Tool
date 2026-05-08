@@ -14,7 +14,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private int _selectedTabIndex;
 
-    public ObservableCollection<string> OutputLog { get; } = new();
+    public ObservableCollection<string> OutputLog { get; } = [];
 
     public CreateFilesystemViewModel CreateFilesystemTab { get; }
     public FilesystemOperationsViewModel FilesystemOperationsTab { get; }

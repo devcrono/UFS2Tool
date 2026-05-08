@@ -3,15 +3,13 @@
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
 using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 namespace UFS2Tool.GUI.ViewModels;
 
-public partial class DeviceMountViewModel : ViewModelBase
+public partial class DeviceMountViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
+    private readonly ObservableCollection<string> _outputLog = outputLog;
 
     [ObservableProperty]
     private string _imagePath = "";
@@ -30,11 +28,6 @@ public partial class DeviceMountViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _deviceInfoText = "";
-
-    public DeviceMountViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
 
     [RelayCommand]
     private async Task ShowDeviceInfoAsync()

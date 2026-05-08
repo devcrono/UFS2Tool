@@ -4,17 +4,14 @@
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 namespace UFS2Tool.GUI.ViewModels;
 
-public partial class WriteFilesystemViewModel : ViewModelBase
+public partial class WriteFilesystemViewModel(ObservableCollection<string> outputLog) : ViewModelBase
 {
-    private readonly ObservableCollection<string> _outputLog;
+    private readonly ObservableCollection<string> _outputLog = outputLog;
 
     [ObservableProperty]
     private string _sourceImagePath = "";
@@ -40,12 +37,7 @@ public partial class WriteFilesystemViewModel : ViewModelBase
     [ObservableProperty]
     private string _selectedDrive = "";
 
-    public ObservableCollection<string> AvailableDrives { get; } = new();
-
-    public WriteFilesystemViewModel(ObservableCollection<string> outputLog)
-    {
-        _outputLog = outputLog;
-    }
+    public ObservableCollection<string> AvailableDrives { get; } = [];
 
     partial void OnSelectedDriveChanged(string value)
     {

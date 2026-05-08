@@ -1,9 +1,9 @@
 // Copyright (c) 2026, SvenGDK
 // Licensed under the BSD 2-Clause License. See LICENSE file for details.
 
-using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using System.Collections.Specialized;
 using UFS2Tool.GUI.ViewModels;
 
 namespace UFS2Tool.GUI.Views;

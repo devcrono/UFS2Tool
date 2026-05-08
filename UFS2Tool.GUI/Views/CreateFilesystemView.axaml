@@ -21,7 +21,7 @@
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="..." Click="BrowseImagePath_Click"
                                 Padding="12,6" Margin="8,0,0,0"/>
-                        <TextBox Text="{Binding ImagePath}" Watermark="{Binding Loc[ImagePathWatermark]}"/>
+                        <TextBox Text="{Binding ImagePath}" PlaceholderText="{Binding Loc[ImagePathWatermark]}"/>
                     </DockPanel>
                     <TextBlock Text="{Binding Loc[ImagePathHint]}"
                                FontSize="12" Foreground="{DynamicResource SystemBaseMediumColor}"/>
@@ -48,29 +48,29 @@
                         <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Loc[BlockSize]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding BlockSize}"
-                                 Watermark="32768"/>
+                                 PlaceholderText="32768"/>
 
                         <!-- Row 1 -->
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Loc[FragmentSize]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FragmentSize}"
-                                 Watermark="4096"/>
+                                 PlaceholderText="4096"/>
 
                         <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Loc[SectorSize]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding SectorSize}"
-                                 Watermark="512"/>
+                                 PlaceholderText="512"/>
 
                         <!-- Row 2 -->
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Loc[VolumeName]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding VolumeName}"
-                                 Watermark="{Binding Loc[VolumeNameWatermark]}"/>
+                                 PlaceholderText="{Binding Loc[VolumeNameWatermark]}"/>
 
                         <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding Loc[MinFreePercent]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding MinFreePercent}"
-                                 Watermark="8"/>
+                                 PlaceholderText="8"/>
 
                         <!-- Row 3 -->
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding Loc[Optimization]}"
@@ -84,13 +84,13 @@
                         <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding Loc[BytesPerInode]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding BytesPerInode}"
-                                 Watermark="{Binding Loc[BytesPerInodeWatermark]}"/>
+                                 PlaceholderText="{Binding Loc[BytesPerInodeWatermark]}"/>
 
                         <!-- Row 4 -->
                         <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding Loc[ImageSizeMB]}"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SizeInMB}"
-                                 Watermark="100"/>
+                                 PlaceholderText="100"/>
                     </Grid>
                 </StackPanel>
             </Border>
@@ -104,7 +104,7 @@
                         <Button DockPanel.Dock="Right" Content="..." Click="BrowseInputDirectory_Click"
                                 Padding="12,6" Margin="8,0,0,0"/>
                         <TextBox Text="{Binding InputDirectory}"
-                                 Watermark="{Binding Loc[InputDirectoryWatermark]}"/>
+                                 PlaceholderText="{Binding Loc[InputDirectoryWatermark]}"/>
                     </DockPanel>
                     <TextBlock Text="{Binding Loc[InputDirectoryHint]}"
                                FontSize="12" Foreground="{DynamicResource SystemBaseMediumColor}"/>
